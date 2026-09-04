@@ -8,6 +8,10 @@ import logging
 import os
 from typing import Optional
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 
 from .config import ConfigManager
 from .logger import LoggerManager
@@ -162,7 +166,7 @@ class AutoSignApp:
                 debug_dir = os.path.join("logs", "debug")
                 os.makedirs(debug_dir, exist_ok=True)
 
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                timestamp = datetime.now(BEIJING_TZ).strftime("%Y%m%d_%H%M%S_%f")
 
                 # 捕获截图
                 try:
@@ -276,7 +280,7 @@ class AutoSignApp:
             return
 
         try:
-            end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            end_time = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
             # 计算执行时长
             start_dt = datetime.strptime(self.execution_start_time, "%Y-%m-%d %H:%M:%S")
@@ -289,13 +293,19 @@ class AutoSignApp:
             seconds = total_seconds % 60
             duration_str = f"{minutes}分{seconds}秒" if minutes > 0 else f"{seconds}秒"
 
-            # 创建执行摘要
+            # 创建执行摘要：通知中固定按“签到 → 拟真浏览 → 回帖”排序
+            task_order = {"signin": 0, "browse": 1, "reply": 2}
+            ordered_tasks = sorted(
+                self.task_results,
+                key=lambda task: task_order.get(task.task_type, 99),
+            )
+
             summary = ExecutionSummary(
                 username=self.config_manager.get("username", "未知用户"),
                 start_time=self.execution_start_time,
                 end_time=end_time,
                 total_duration=duration_str,
-                tasks=self.task_results,
+                tasks=ordered_tasks,
                 overall_success=overall_success,
             )
 
@@ -437,25 +447,36 @@ class AutoSignApp:
         return False
 
     def _perform_humanlike_activities(self) -> None:
-        """执行拟人化活动"""
-        # 检查两个拟人化功能是否都禁用
+        """执行拟人化活动，并把禁用项也记录到执行摘要中。"""
         enable_reply = self.config_manager.get("enable_reply", True)
         enable_browsing = self.config_manager.get("enable_random_browsing", True)
 
+        # 禁用的任务也要出现在 Telegram 摘要中，但不计为成功任务
+        if not enable_browsing:
+            self.logger.info("拟真浏览活动已禁用，跳过执行")
+            self._record_task_result(
+                "browse", False, "拟真浏览活动已禁用，跳过执行"
+            )
+
+        if not enable_reply:
+            self.logger.info("回帖活动已禁用，跳过执行")
+            self._record_task_result(
+                "reply", False, "回帖活动已禁用，跳过执行"
+            )
+
+        # 两项都关闭时，不调用拟人化执行模块
         if not enable_reply and not enable_browsing:
-            self.logger.info("拟人化活动已禁用")
-            self._record_task_result("browse", True, "拟人化活动已禁用，跳过执行")
             return
 
         try:
             self.logger.info("开始执行拟人化活动")
 
-            # 执行拟人化活动并获取详细结果
+            # 执行已启用的拟人化活动并获取详细结果
             activity_results = (
                 self.humanlike_manager.perform_humanlike_activities_with_results()
             )
 
-            # 记录浏览活动结果
+            # 只记录已启用的浏览活动结果；禁用项上面已经记录
             if enable_browsing:
                 browse_success = activity_results.get("browse_success", True)
                 browse_message = activity_results.get(
@@ -463,7 +484,7 @@ class AutoSignApp:
                 )
                 self._record_task_result("browse", browse_success, browse_message)
 
-            # 记录回帖活动结果
+            # 只记录已启用的回帖活动结果；禁用项上面已经记录
             if enable_reply:
                 reply_success = activity_results.get("reply_success", False)
                 reply_message = activity_results.get(
@@ -478,7 +499,15 @@ class AutoSignApp:
 
         except Exception as e:
             self.logger.warning(f"拟人化活动执行失败: {e}")
-            self._record_task_result("browse", False, "拟人化活动执行失败", str(e))
+            # 如果启用了某项但整体拟人化执行发生异常，给启用项记录失败
+            if enable_browsing:
+                self._record_task_result(
+                    "browse", False, "拟真浏览活动执行失败", str(e)
+                )
+            if enable_reply:
+                self._record_task_result(
+                    "reply", False, "回帖活动执行失败", str(e)
+                )
 
     def _perform_signin(self) -> bool:
         """
@@ -534,7 +563,7 @@ class AutoSignApp:
         # 使用超时保护上下文管理器
         with TimeoutProtectionContext(self, timeout_seconds) as timeout_manager:
             # 记录开始时间
-            self.execution_start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.execution_start_time = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
             # 执行结果标志
             execution_success = False
