@@ -2,6 +2,11 @@
 # 完整配置说明请参考: docs/configuration.md
 name: 98tang Auto Sign-in
 
+# 串行执行，避免同时运行时累计次数发生竞争
+concurrency:
+  group: 98tang-autosign-counter
+  cancel-in-progress: false
+
 on:
   schedule:
     # 每天北京时间0:00执行 (UTC+8 = UTC+0-8, 所以0点对应UTC 16点)
@@ -68,6 +73,41 @@ jobs:
         fi
         echo "✅ 配置验证通过 (Environment secrets模式: 98tang-autosign)"
         
+    - name: 更新任务历史计数
+      env:
+        GH_TOKEN: ${{ secrets.GH_VARIABLE_TOKEN }}
+        REPOSITORY: ${{ github.repository }}
+        ENVIRONMENT_NAME: 98tang-autosign
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if [ -z "${GH_TOKEN:-}" ]; then
+          echo "❌ 缺少 GH_VARIABLE_TOKEN，无法更新 TASK_RUN_COUNT"
+          exit 1
+        fi
+
+        CURRENT_COUNT=$(gh api \
+          "/repos/${REPOSITORY}/environments/${ENVIRONMENT_NAME}/variables/TASK_RUN_COUNT" \
+          --jq '.value')
+
+        if ! [[ "$CURRENT_COUNT" =~ ^[0-9]+$ ]]; then
+          echo "❌ TASK_RUN_COUNT 当前值不是非负整数: $CURRENT_COUNT"
+          exit 1
+        fi
+
+        NEXT_COUNT=$((CURRENT_COUNT + 1))
+
+        gh api \
+          --method PATCH \
+          "/repos/${REPOSITORY}/environments/${ENVIRONMENT_NAME}/variables/TASK_RUN_COUNT" \
+          -f name='TASK_RUN_COUNT' \
+          -f value="$NEXT_COUNT" \
+          >/dev/null
+
+        echo "TASK_RUN_COUNT=$NEXT_COUNT" >> "$GITHUB_ENV"
+        echo "📊 本次为第 $NEXT_COUNT 次任务执行"
+
     - name: 显示执行时间
       run: |
         echo "⏰ 当前UTC时间: $(date '+%Y-%m-%d %H:%M:%S')"
@@ -111,7 +151,6 @@ jobs:
         TELEGRAM_SEND_SCREENSHOT: ${{ vars.TELEGRAM_SEND_SCREENSHOT || 'false' }}  # GitHub Actions 默认启用截图
         
         # 系统配置（强制设置）
-        TZ: Asia/Shanghai
         HEADLESS: 'true'  # Github Action 强制无头模式
         LOG_LEVEL: ${{ vars.LOG_LEVEL || 'DEBUG' }}  # GitHub Actions 默认使用 DEBUG 级别
         MAX_LOG_FILES: ${{ vars.MAX_LOG_FILES || '7' }}
