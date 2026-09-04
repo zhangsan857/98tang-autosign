@@ -111,6 +111,7 @@ jobs:
         TELEGRAM_SEND_SCREENSHOT: ${{ vars.TELEGRAM_SEND_SCREENSHOT || 'false' }}  # GitHub Actions 默认启用截图
         
         # 系统配置（强制设置）
+        TZ: Asia/Shanghai
         HEADLESS: 'true'  # Github Action 强制无头模式
         LOG_LEVEL: ${{ vars.LOG_LEVEL || 'DEBUG' }}  # GitHub Actions 默认使用 DEBUG 级别
         MAX_LOG_FILES: ${{ vars.MAX_LOG_FILES || '7' }}
