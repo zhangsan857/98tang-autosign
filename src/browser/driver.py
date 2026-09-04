@@ -5,6 +5,10 @@
 """
 
 import logging
+import os
+import re
+import shutil
+import subprocess
 from typing import Optional, Dict, Any
 
 # 浏览器自动化导入
@@ -107,6 +111,44 @@ class BrowserDriverManager:
         self._is_cleanup_done = False
         self.wait: Optional[WebDriverWait] = None
 
+    def _detect_chrome_major_version(self) -> Optional[int]:
+        """检测当前系统已安装 Chrome/Chromium 的主版本号。"""
+        candidates = [
+            "google-chrome",
+            "google-chrome-stable",
+            "chromium",
+            "chromium-browser",
+        ]
+
+        for command in candidates:
+            executable = shutil.which(command)
+            if not executable:
+                continue
+
+            try:
+                result = subprocess.run(
+                    [executable, "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+                version_text = (result.stdout or result.stderr or "").strip()
+                match = re.search(r"(\d+)\.", version_text)
+                if match:
+                    major_version = int(match.group(1))
+                    self.logger.info(
+                        f"检测到浏览器版本: {version_text}，主版本: {major_version}"
+                    )
+                    return major_version
+            except Exception as e:
+                self.logger.debug(f"检测 {command} 版本失败: {e}")
+
+        self.logger.warning(
+            "未能自动检测 Chrome/Chromium 主版本，将让 undetected-chromedriver 自动选择驱动"
+        )
+        return None
+
     def create_driver(self, config: Dict[str, Any]) -> bool:
         """
         创建浏览器驱动
@@ -146,8 +188,6 @@ class BrowserDriverManager:
             ]
 
             # Github Action 和 CI 环境的额外配置
-            import os
-
             if os.getenv("GITHUB_ACTIONS") or os.getenv("CI"):
                 self.logger.debug("检测到CI环境，添加额外配置")
                 ci_args = [
@@ -216,7 +256,19 @@ class BrowserDriverManager:
             # 创建驱动
             self.logger.debug("开始初始化浏览器实例")
             if UNDETECTED_AVAILABLE:
-                raw_driver = uc.Chrome(options=options)
+                chrome_major_version = self._detect_chrome_major_version()
+
+                if chrome_major_version:
+                    self.logger.info(
+                        f"使用与本机 Chrome 主版本 {chrome_major_version} 匹配的 ChromeDriver"
+                    )
+                    raw_driver = uc.Chrome(
+                        options=options,
+                        version_main=chrome_major_version,
+                    )
+                else:
+                    # 检测失败时保留原有自动选择逻辑，避免因环境差异直接中断
+                    raw_driver = uc.Chrome(options=options)
             else:
                 raw_driver = webdriver.Chrome(options=options)
 
