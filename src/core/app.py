@@ -300,6 +300,12 @@ class AutoSignApp:
                 key=lambda task: task_order.get(task.task_type, 99),
             )
 
+            # 从 GitHub Actions 注入的环境变量读取累计执行次数
+            try:
+                total_runs = max(0, int(os.getenv("TASK_RUN_COUNT", "0")))
+            except (TypeError, ValueError):
+                total_runs = 0
+
             summary = ExecutionSummary(
                 username=self.config_manager.get("username", "未知用户"),
                 start_time=self.execution_start_time,
@@ -307,6 +313,7 @@ class AutoSignApp:
                 total_duration=duration_str,
                 tasks=ordered_tasks,
                 overall_success=overall_success,
+                total_runs=total_runs,
             )
 
             # 准备附件信息
