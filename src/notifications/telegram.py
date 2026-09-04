@@ -9,8 +9,12 @@ import logging
 import requests
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Optional, Dict, Any, List, Union
 from dataclasses import dataclass, asdict
+
+
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 
 
 @dataclass
@@ -25,7 +29,7 @@ class TaskResult:
 
     def __post_init__(self):
         if self.timestamp is None:
-            self.timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.timestamp = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
 @dataclass
@@ -38,6 +42,7 @@ class ExecutionSummary:
     total_duration: str
     tasks: List[TaskResult]
     overall_success: bool
+    total_runs: int = 0
 
     def to_message(self) -> str:
         """转换为美观的Telegram消息格式"""
@@ -93,6 +98,9 @@ class ExecutionSummary:
                     .replace("!", "\\!")
                 )
                 message += f"  _{details_escaped}_\n"
+
+        # 累计任务执行历史（由 GitHub Actions 持久化计数并传入）
+        message += f"\n*任务历史:*\n总共执行{self.total_runs}次任务\n"
 
         return message.strip()
 
@@ -238,7 +246,7 @@ class TelegramNotifier:
                 files = {"document": f}
                 data = {
                     "chat_id": self.chat_id,
-                    "caption": f'📄 *98tang\\-autosign 日志文件*\n\n📅 生成时间: `{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}`',
+                    "caption": f'📄 *98tang\\-autosign 日志文件*\n\n📅 生成时间: `{datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")}`',
                     "parse_mode": "MarkdownV2",
                 }
 
@@ -284,7 +292,7 @@ class TelegramNotifier:
 🧪 *98tang\\-autosign 连接测试*
 
 ✅ Telegram Bot 连接正常
-⏰ 测试时间: `{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}`
+⏰ 测试时间: `{datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")}`
 
 如果您看到这条消息，说明通知配置成功！
 """
@@ -434,7 +442,7 @@ class TelegramNotifier:
 🚨 *98tang\\-autosign 错误报告*
 
 ❌ *错误类型*: `{escaped_type}`
-⏰ *时间*: `{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}`
+⏰ *时间*: `{datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")}`
 
 📋 *错误详情*:
 ```
@@ -466,7 +474,7 @@ class TelegramNotifier:
                 files = {"photo": f}
                 # 使用自定义caption或默认caption
                 if caption is None:
-                    caption = f'📸 *错误截图*\n\n⏰ 捕获时间: `{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}`'
+                    caption = f'📸 *错误截图*\n\n⏰ 捕获时间: `{datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")}`'
 
                 data = {
                     "chat_id": self.chat_id,
@@ -515,7 +523,7 @@ class TelegramNotifier:
         Returns:
             是否发送成功
         """
-        caption = f'📄 错误HTML源代码\n\n⏰ 捕获时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
+        caption = f'📄 错误HTML源代码\n\n⏰ 捕获时间: {datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")}'
         return self.send_document(html_path, caption)
 
     def send_batch_notification(self, notification_data: NotificationData) -> bool:
@@ -642,7 +650,7 @@ class TelegramNotifier:
         message = f"""🚨 *98tang\\-autosign 错误报告*
 
 ❌ *错误类型*: `{escaped_type}`
-⏰ *时间*: `{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}`
+⏰ *时间*: `{datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")}`
 
 📋 *错误详情*:
 ```
@@ -658,7 +666,7 @@ class TelegramNotifier:
                 {
                     "type": "log",
                     "path": log_file_path,
-                    "caption": f'📄 *98tang\\-autosign 错误日志*\n\n📅 生成时间: `{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}`',
+                    "caption": f'📄 *98tang\\-autosign 错误日志*\n\n📅 生成时间: `{datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")}`',
                 }
             )
             attachment_descriptions.append("📄 错误日志文件")
@@ -668,7 +676,7 @@ class TelegramNotifier:
                 {
                     "type": "screenshot",
                     "path": screenshot_path,
-                    "caption": f'📸 *错误截图*\n\n⏰ 捕获时间: `{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}`',
+                    "caption": f'📸 *错误截图*\n\n⏰ 捕获时间: `{datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")}`',
                 }
             )
             attachment_descriptions.append("📸 错误截图")
@@ -678,7 +686,7 @@ class TelegramNotifier:
                 {
                     "type": "html",
                     "path": html_path,
-                    "caption": f'📄 错误HTML源代码\n\n⏰ 捕获时间: `{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}`',
+                    "caption": f'📄 错误HTML源代码\n\n⏰ 捕获时间: `{datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")}`',
                 }
             )
             attachment_descriptions.append("📄 HTML源代码")
@@ -737,7 +745,7 @@ class TelegramNotifier:
                         {
                             "type": "log",
                             "path": log_file_path,
-                            "caption": f'📄 *98tang\\-autosign 日志*\n\n📅 生成时间: `{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}`',
+                            "caption": f'📄 *98tang\\-autosign 日志*\n\n📅 生成时间: `{datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")}`',
                         }
                     )
                     attachment_descriptions.append("📄 执行日志文件")
